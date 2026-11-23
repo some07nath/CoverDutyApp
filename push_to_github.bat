@@ -1,38 +1,40 @@
 @echo off
-set PATH=%LOCALAPPDATA%\Programs\Git\cmd;%PATH%
+set PATH=%LOCALAPPDATA%\Programs\gh\bin;%LOCALAPPDATA%\Programs\Git\cmd;%PATH%
 cd /d "%~dp0"
 echo ===================================================
 echo     Push CoverDutyApp to GitHub to Build APK
 echo ===================================================
 echo.
-echo 1. Go to https://github.com/new and create a new repository.
-echo    (Name it e.g. "CoverDutyApp", do NOT check 'Add README')
-echo.
-echo 2. Copy the repository URL (e.g. https://github.com/your-username/CoverDutyApp.git)
-echo.
-set /p REPO_URL="Paste your GitHub repository URL here: "
 
-if "%REPO_URL%"=="" (
-    echo No URL entered. Aborting.
-    pause
-    exit /b
+echo Checking GitHub login...
+gh auth status >nul 2>&1
+if %ERRORLEVEL% NEQ 0 (
+    echo.
+    echo 1. Your browser will open GitHub to authorize access.
+    echo 2. Enter the one-time code shown below if prompted.
+    echo.
+    gh auth login -w -p https
+    gh auth setup-git
 )
 
 echo.
-echo Setting remote repository...
+echo Configuring remote repository for some07nath/CoverDutyApp...
 git remote remove origin 2>nul
-git remote add origin %REPO_URL%
+git remote add origin https://github.com/some07nath/CoverDutyApp.git
 git branch -M main
 
 echo.
-echo Pushing code to GitHub...
-git push -u origin main
+echo Pushing your project to GitHub...
+git push -u origin main --force
 
 echo.
 echo ===================================================
-echo Done! Now open your GitHub repository in your browser:
-echo 1. Click on the "Actions" tab at the top.
-echo 2. You will see "Build Android APK" running.
-echo 3. In about 3 minutes, click on it and download your APK!
+echo SUCCESS! Your code has been pushed to GitHub.
+echo.
+echo Now open this link in your browser:
+echo https://github.com/some07nath/CoverDutyApp/actions
+echo.
+echo You will see "Build Android APK" running!
+echo In ~3-4 minutes, click it and download your APK!
 echo ===================================================
 pause
