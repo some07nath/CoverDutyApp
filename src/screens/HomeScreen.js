@@ -110,7 +110,7 @@ export default function HomeScreen({ navigation }) {
                   ]}
                 >
                   {isAbsent ? '✅ ' : '⬜ '}
-                  {teacher.name}
+                  {teacher.shortName ? `${teacher.shortName} (${teacher.name})` : teacher.name}
                 </Text>
                 <Text style={styles.teacherDesignation}>
                   {teacher.designation} | {teacher.subjects.join(', ')}

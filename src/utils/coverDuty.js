@@ -1,5 +1,5 @@
 // Cover Duty Assignment Algorithm
-import { TEACHERS, ELIGIBLE_TEACHERS, PERIODS } from '../data/teachers';
+import { TEACHERS, ELIGIBLE_TEACHERS, PERIODS, getTeacherDisplayName } from '../data/teachers';
 
 /**
  * Get the classes an absent teacher has on a specific day
@@ -7,7 +7,9 @@ import { TEACHERS, ELIGIBLE_TEACHERS, PERIODS } from '../data/teachers';
  */
 export function getAbsentTeacherClasses(teacherName, dayKey) {
   const teacher = TEACHERS.find(
-    (t) => t.name.toLowerCase() === teacherName.toLowerCase()
+    (t) =>
+      t.name.toLowerCase() === teacherName.toLowerCase() ||
+      (t.shortName && t.shortName.toLowerCase() === teacherName.toLowerCase())
   );
   if (!teacher) return [];
 
@@ -53,9 +55,9 @@ export function parseClassFromEntry(entry) {
   }
 
   // Regular classes - try to extract number
-  // Patterns: "12 Chem", "Class 12", "Sc 6", "Math 6", "12 - HIS", "10 - His"
+  // Patterns: "12 Chem", "12 - HIS", "Sc 6", "Math 6", "Class 12"
   const patterns = [
-    /^(\d+)\s*[-–]?\s*/,       // "12 Chem", "12 - HIS"
+    /^(\d+)\s*[-–]?\s*/,       // "12 Chem", "12 - HIS", "11 Eco"
     /\s(\d+)$/,                // "Sc 6", "Math 6"
     /class\s*(\d+)/i,          // "Class 12"
     /(\d+)\s*(Math|Sc|Eng|SST|His|Geog|Phy|Chem|Bio|Eco|Pol|Acc|Bst|Ent|Art|KB|KV|FL|IT|PE|Lib|Comm|Hindi|Ben)/i,
@@ -105,7 +107,7 @@ export function parseClassFromEntry(entry) {
 export function canTeacherCoverClass(teacher, classInfo) {
   if (!classInfo) return false;
 
-  // Principal never covers
+  // Principal never covers (Rule 4a)
   if (teacher.category === 'principal') return false;
 
   // Primary teachers don't cover
@@ -114,16 +116,14 @@ export function canTeacherCoverClass(teacher, classInfo) {
   // Excluded teachers don't cover
   if (teacher.category === 'excluded') return false;
 
-  // NIOS class needs NIOS-eligible teacher
+  // NIOS class needs NIOS-eligible teacher (Rule 4b)
   if (classInfo.isNios) {
-    // Teachers with niosClasses property can cover NIOS
     if (teacher.niosClasses && teacher.niosClasses.length > 0) return true;
-    // Teachers whose category is 'nios'
     if (teacher.category === 'nios') return true;
     return false;
   }
 
-  // For regular classes
+  // For regular classes (Rule 4b)
   const classNum = classInfo.classNum;
   if (classNum === 0) return true; // Special classes like OBE, UKG
 
@@ -152,20 +152,20 @@ export function getTeacherDayClassCount(teacher, dayKey) {
 
 /**
  * Find free teachers for a specific period on a specific day
- * Returns array sorted by: eligible to cover > more classes (busier teachers first) > alphabetical
+ * Returns array sorted by: eligible to cover > more classes today (Rule 4d) > alphabetical
  */
 export function findFreeTeachers(dayKey, periodIndex, classInfo, absentTeacherNames, presentTeacherNames) {
   const freeTeachers = [];
 
   for (const teacher of ELIGIBLE_TEACHERS) {
     // Skip absent teachers
-    if (absentTeacherNames.map(n => n.toLowerCase()).includes(teacher.name.toLowerCase())) {
+    if (absentTeacherNames.map((n) => n.toLowerCase()).includes(teacher.name.toLowerCase())) {
       continue;
     }
 
     // Skip if not in present list (if present list is provided)
     if (presentTeacherNames && presentTeacherNames.length > 0) {
-      if (!presentTeacherNames.map(n => n.toLowerCase()).includes(teacher.name.toLowerCase())) {
+      if (!presentTeacherNames.map((n) => n.toLowerCase()).includes(teacher.name.toLowerCase())) {
         continue;
       }
     }
@@ -179,7 +179,7 @@ export function findFreeTeachers(dayKey, periodIndex, classInfo, absentTeacherNa
       continue; // Teacher is busy
     }
 
-    // Check if teacher can cover this class
+    // Check if teacher can cover this class (Rule 4b)
     const canCover = canTeacherCoverClass(teacher, classInfo);
 
     const dayClassCount = getTeacherDayClassCount(teacher, dayKey);
@@ -189,17 +189,15 @@ export function findFreeTeachers(dayKey, periodIndex, classInfo, absentTeacherNa
       canCover,
       dayClassCount,
       name: teacher.name,
+      shortName: teacher.shortName || teacher.name,
     });
   }
 
-  // Sort: eligible teachers first, then by class count (more classes = busier = should be assigned), then alphabetical
+  // Sort: eligible teachers first, then by class count (more classes = busier = priority per Rule 4d), then alphabetical
   freeTeachers.sort((a, b) => {
-    // Eligible first
     if (a.canCover && !b.canCover) return -1;
     if (!a.canCover && b.canCover) return 1;
-    // More classes first (busier teacher gets priority per user's rule)
     if (b.dayClassCount !== a.dayClassCount) return b.dayClassCount - a.dayClassCount;
-    // Alphabetical
     return a.name.localeCompare(b.name);
   });
 
@@ -207,7 +205,8 @@ export function findFreeTeachers(dayKey, periodIndex, classInfo, absentTeacherNa
 }
 
 /**
- * Find if another present teacher is also teaching the same class (for combining sections)
+ * Find if other present teachers are also teaching the same class at the same period
+ * (Rule 4e: for combining sections of classes)
  */
 export function findTeachersWithSameClass(dayKey, periodIndex, classInfo, absentTeacherNames) {
   if (!classInfo || classInfo.classNum === 0) return [];
@@ -216,7 +215,7 @@ export function findTeachersWithSameClass(dayKey, periodIndex, classInfo, absent
 
   for (const teacher of TEACHERS) {
     // Skip absent teachers
-    if (absentTeacherNames.map(n => n.toLowerCase()).includes(teacher.name.toLowerCase())) {
+    if (absentTeacherNames.map((n) => n.toLowerCase()).includes(teacher.name.toLowerCase())) {
       continue;
     }
 
@@ -236,6 +235,7 @@ export function findTeachersWithSameClass(dayKey, periodIndex, classInfo, absent
     if (theirClassInfo.classNum === classInfo.classNum && theirClassInfo.isNios === classInfo.isNios) {
       teachersWithSameClass.push({
         teacherName: teacher.name,
+        shortName: teacher.shortName || teacher.name,
         classInfo: theirClassInfo,
         rawEntry: entry,
       });
@@ -247,16 +247,24 @@ export function findTeachersWithSameClass(dayKey, periodIndex, classInfo, absent
 
 /**
  * Generate the final formatted output
- * assignments: { coverTeacherName: [{ periodLabel, classLabel, absentTeacher, combined }] }
+ * Headings: Absent Teachers (e.g. Sekhar, Durjoy, Somenath...)
+ * Lines: {period} - {class} - {coverTeacher} (combined)
+ *
+ * assignmentsByAbsentTeacher: { [absentTeacherName]: [{ periodLabel, classLabel, coverTeacher, combined }] }
  */
-export function formatCoverOutput(date, assignments) {
-  const dateStr = `${date.getDate()}.${date.getMonth() + 1}.${date.getFullYear()}`;
-  let output = `Cover for ${dateStr}\n`;
+export function formatCoverOutput(date, assignmentsByAbsentTeacher) {
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  let output = `Cover for ${day}.${month}.${year}\n`;
 
-  for (const [coverTeacher, duties] of Object.entries(assignments)) {
-    output += `\n${coverTeacher}\n`;
+  for (const [absentTeacher, duties] of Object.entries(assignmentsByAbsentTeacher)) {
+    if (!duties || duties.length === 0) continue;
+    const absentDisplay = getTeacherDisplayName(absentTeacher);
+    output += `\n${absentDisplay}\n`;
     for (const duty of duties) {
-      let line = `${duty.periodLabel} - ${duty.classLabel} - ${duty.absentTeacher}`;
+      const coverDisplay = getTeacherDisplayName(duty.coverTeacher);
+      let line = `${duty.periodLabel} - ${duty.classLabel} - ${coverDisplay}`;
       if (duty.combined) {
         line += ' (combined)';
       }
@@ -264,5 +272,5 @@ export function formatCoverOutput(date, assignments) {
     }
   }
 
-  return output;
+  return output.trim();
 }

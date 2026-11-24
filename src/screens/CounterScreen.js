@@ -93,7 +93,9 @@ export default function CounterScreen({ navigation }) {
           return (
             <View key={teacher.name} style={styles.teacherRow}>
               <View style={styles.teacherDetails}>
-                <Text style={styles.teacherName}>{teacher.name}</Text>
+                <Text style={styles.teacherName}>
+                  {teacher.shortName ? `${teacher.shortName} (${teacher.name})` : teacher.name}
+                </Text>
                 <Text style={styles.teacherSub}>
                   {teacher.designation} • {teacher.subjects.join(', ')}
                 </Text>

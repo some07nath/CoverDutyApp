@@ -14,14 +14,14 @@ import { formatCoverOutput } from '../utils/coverDuty';
 import { incrementDutyCounter } from '../utils/storage';
 
 export default function OutputScreen({ route, navigation }) {
-  const { date, groupedAssignments } = route.params;
+  const { date, groupedByAbsentTeacher } = route.params;
   const parsedDate = new Date(date);
 
   const [savedCounters, setSavedCounters] = useState(false);
   const [copied, setCopied] = useState(false);
 
   // Generate formatted routine string
-  const outputText = formatCoverOutput(parsedDate, groupedAssignments);
+  const outputText = formatCoverOutput(parsedDate, groupedByAbsentTeacher);
 
   const handleCopy = async () => {
     await Clipboard.setStringAsync(outputText);
@@ -32,9 +32,12 @@ export default function OutputScreen({ route, navigation }) {
 
   const handleShare = async () => {
     try {
+      const day = String(parsedDate.getDate()).padStart(2, '0');
+      const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
+      const year = parsedDate.getFullYear();
       await Share.share({
         message: outputText,
-        title: `Cover Duty for ${parsedDate.getDate()}.${parsedDate.getMonth() + 1}.${parsedDate.getFullYear()}`,
+        title: `Cover Duty for ${day}.${month}.${year}`,
       });
     } catch (error) {
       Alert.alert('Error', error.message);
@@ -48,9 +51,19 @@ export default function OutputScreen({ route, navigation }) {
     }
 
     try {
-      // For each cover teacher, increment their counter by the number of duties assigned
-      for (const [teacher, duties] of Object.entries(groupedAssignments)) {
-        await incrementDutyCounter(teacher, duties.length);
+      // Calculate how many cover classes each cover teacher received
+      const coverTeacherCounts = {};
+      Object.values(groupedByAbsentTeacher).forEach((duties) => {
+        duties.forEach((duty) => {
+          if (duty.coverTeacher) {
+            coverTeacherCounts[duty.coverTeacher] =
+              (coverTeacherCounts[duty.coverTeacher] || 0) + 1;
+          }
+        });
+      });
+
+      for (const [teacher, count] of Object.entries(coverTeacherCounts)) {
+        await incrementDutyCounter(teacher, count);
       }
       setSavedCounters(true);
       Alert.alert(
@@ -70,7 +83,7 @@ export default function OutputScreen({ route, navigation }) {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Final Cover Routine</Text>
         <Text style={styles.headerSubtitle}>
-          Formatted output ready to share
+          Formatted by absent teachers • ready to copy & share
         </Text>
       </View>
 
@@ -91,7 +104,7 @@ export default function OutputScreen({ route, navigation }) {
           <TouchableOpacity style={styles.actionBtnPrimary} onPress={handleCopy}>
             <Text style={styles.actionBtnIcon}>📋</Text>
             <Text style={styles.actionBtnTextPrimary}>
-              {copied ? 'Copied to Clipboard!' : 'Copy Routine'}
+              {copied ? 'Copied to Clipboard!' : 'Copy Routine Text'}
             </Text>
           </TouchableOpacity>
 

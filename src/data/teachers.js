@@ -1,5 +1,5 @@
 // Teacher timetable data extracted from Google Sheet "NEW SESSION ROUTINE 26 - 27"
-// Each teacher has: name, classes they teach, category (junior/senior/nios), and weekly timetable
+// Each teacher has: name, shortName, classes they teach, category (junior/senior/nios), and weekly timetable
 // Timetable: { MON: [period1, period2, ...period8], TUE: [...], ... }
 // Empty string = free period, "ASSEMBLY" = assembly (period 0 on Monday)
 
@@ -27,6 +27,7 @@ export const PERIOD_TIMES = [
 export const TEACHERS = [
   {
     name: 'Samrin Mumtaz',
+    shortName: 'Samrin Mumtaz',
     designation: 'Principal',
     category: 'principal',
     classesRange: [12],
@@ -41,6 +42,7 @@ export const TEACHERS = [
   },
   {
     name: 'Swarnendu Baduri',
+    shortName: 'Swarnendu',
     designation: 'Teacher',
     category: 'both',
     classesRange: [8, 9, 12],
@@ -55,6 +57,7 @@ export const TEACHERS = [
   },
   {
     name: 'Somenath Mandal',
+    shortName: 'Somenath',
     designation: 'Senior Coordinator / CT Class 11',
     category: 'senior',
     classesRange: [9, 10, 12],
@@ -69,6 +72,7 @@ export const TEACHERS = [
   },
   {
     name: 'Shivani Singh',
+    shortName: 'Shivani',
     designation: 'Teacher',
     category: 'junior',
     classesRange: [6, 7, 8],
@@ -83,6 +87,7 @@ export const TEACHERS = [
   },
   {
     name: 'Durjoy Chakrabarty',
+    shortName: 'Durjoy',
     designation: 'CT Class 10',
     category: 'senior',
     classesRange: [9, 10, 11, 12],
@@ -97,6 +102,7 @@ export const TEACHERS = [
   },
   {
     name: 'Sonali Sen',
+    shortName: 'Sonali',
     designation: 'CT Class 9',
     category: 'both',
     classesRange: [6, 7, 9, 10, 11, 12],
@@ -111,6 +117,7 @@ export const TEACHERS = [
   },
   {
     name: 'Aniket',
+    shortName: 'Aniket',
     designation: 'CT Class 7',
     category: 'junior',
     classesRange: [6, 7],
@@ -125,6 +132,7 @@ export const TEACHERS = [
   },
   {
     name: 'Sanjana Biswas',
+    shortName: 'Sanjana',
     designation: 'CT Class 6',
     category: 'junior',
     classesRange: [6, 7],
@@ -139,6 +147,7 @@ export const TEACHERS = [
   },
   {
     name: 'Soma Mukherjee',
+    shortName: 'Soma',
     designation: 'CT NIOS 10',
     category: 'both',
     classesRange: [8, 9, 11],
@@ -154,6 +163,7 @@ export const TEACHERS = [
   },
   {
     name: 'Susmita Dhar',
+    shortName: 'Susmita',
     designation: 'Middle Coordinator',
     category: 'senior',
     classesRange: [8, 9, 10, 12],
@@ -168,6 +178,7 @@ export const TEACHERS = [
   },
   {
     name: 'Risha Ghosh',
+    shortName: 'Risha',
     designation: 'Teacher',
     category: 'both',
     classesRange: [7, 8, 9, 10],
@@ -182,6 +193,7 @@ export const TEACHERS = [
   },
   {
     name: 'Satarupa Dutta',
+    shortName: 'Satarupa',
     designation: 'CT Class 12',
     category: 'senior',
     classesRange: [6, 7, 8, 11, 12],
@@ -196,6 +208,7 @@ export const TEACHERS = [
   },
   {
     name: 'Balaka Roy',
+    shortName: 'Balaka',
     designation: 'Hindi Teacher',
     category: 'both',
     classesRange: [5, 8, 9, 10, 12],
@@ -210,6 +223,7 @@ export const TEACHERS = [
   },
   {
     name: 'Ayan Jana',
+    shortName: 'Ayan',
     designation: 'Bengali Teacher',
     category: 'both',
     classesRange: [6, 8, 9, 10, 12],
@@ -225,6 +239,7 @@ export const TEACHERS = [
   },
   {
     name: 'Sagnik Basu',
+    shortName: 'Sagnik B',
     designation: 'Maths Teacher',
     category: 'both',
     classesRange: [3, 4, 5, 8, 10, 12],
@@ -239,6 +254,7 @@ export const TEACHERS = [
   },
   {
     name: 'Sekhar Baran Karmakar',
+    shortName: 'Sekhar',
     designation: 'Commercial Art Teacher',
     category: 'both',
     classesRange: [6, 7, 8, 11, 12],
@@ -254,6 +270,7 @@ export const TEACHERS = [
   },
   {
     name: 'Pradipta Bandyopadhyay',
+    shortName: 'Pradipta',
     designation: 'Librarian',
     category: 'both',
     classesRange: [6, 7, 8, 9, 10, 11, 12],
@@ -269,6 +286,7 @@ export const TEACHERS = [
   },
   {
     name: 'Susmita Bose',
+    shortName: 'Susmita B',
     designation: 'CT Class 8',
     category: 'senior',
     classesRange: [6, 7, 8, 9, 10, 11, 12],
@@ -284,6 +302,7 @@ export const TEACHERS = [
   },
   {
     name: 'Sagnik Guha',
+    shortName: 'Sagnik G',
     designation: 'NIOS Coordinator',
     category: 'senior',
     classesRange: [8, 9, 10, 11, 12],
@@ -299,6 +318,7 @@ export const TEACHERS = [
   },
   {
     name: 'Samaresh Rana',
+    shortName: 'Samaresh',
     designation: 'Computer Science Teacher',
     category: 'both',
     classesRange: [8, 9, 10, 11, 12],
@@ -314,6 +334,7 @@ export const TEACHERS = [
   },
   {
     name: 'Sanjay Patra',
+    shortName: 'Sanjay',
     designation: 'PE Teacher',
     category: 'both',
     classesRange: [2, 3, 4, 5, 6, 7, 8, 9, 11],
@@ -329,6 +350,7 @@ export const TEACHERS = [
   },
   {
     name: 'Ayas Munsi',
+    shortName: 'Ayas',
     designation: 'PE Teacher',
     category: 'both',
     classesRange: [6, 7, 8, 10, 11, 12],
@@ -344,6 +366,7 @@ export const TEACHERS = [
   },
   {
     name: 'Vikash Kumar Shaw',
+    shortName: 'Vikash',
     designation: 'Hindi Teacher',
     category: 'junior',
     classesRange: [6, 7, 8, 9],
@@ -359,6 +382,7 @@ export const TEACHERS = [
   },
   {
     name: 'Iti Chakrabarty',
+    shortName: 'Iti',
     designation: 'Bengali Teacher',
     category: 'primary',
     classesRange: [2, 3, 4, 5, 6, 7],
@@ -373,6 +397,7 @@ export const TEACHERS = [
   },
   {
     name: 'Chetna Solanki',
+    shortName: 'Chetna',
     designation: 'Hindi Teacher',
     category: 'primary',
     classesRange: [1, 2, 3, 4, 5],
@@ -387,6 +412,7 @@ export const TEACHERS = [
   },
   {
     name: 'Indrajeet',
+    shortName: 'Indrajeet',
     designation: 'NIOS 12 Teacher',
     category: 'nios',
     classesRange: [],
@@ -402,6 +428,7 @@ export const TEACHERS = [
   },
   {
     name: 'Tamasa Das',
+    shortName: 'Tamasa',
     designation: 'Special Educator',
     category: 'excluded',
     classesRange: [],
@@ -416,6 +443,7 @@ export const TEACHERS = [
   },
   {
     name: 'Ritu Karmakar Paul',
+    shortName: 'Ritu',
     designation: 'Special Educator',
     category: 'excluded',
     classesRange: [],
@@ -430,6 +458,7 @@ export const TEACHERS = [
   },
   {
     name: 'Koushani Sarkar',
+    shortName: 'Koushani',
     designation: 'Students Counselor',
     category: 'excluded',
     classesRange: [],
@@ -448,6 +477,17 @@ export const TEACHERS = [
 export const ELIGIBLE_TEACHERS = TEACHERS.filter(
   (t) => !['principal', 'primary', 'excluded', 'nios'].includes(t.category)
 );
+
+// Get short/display name for teacher
+export function getTeacherDisplayName(fullName) {
+  if (!fullName) return '';
+  const teacher = TEACHERS.find(
+    (t) =>
+      t.name.toLowerCase() === fullName.toLowerCase() ||
+      (t.shortName && t.shortName.toLowerCase() === fullName.toLowerCase())
+  );
+  return teacher?.shortName || fullName;
+}
 
 // Get day key from JS date (0=Sunday)
 export function getDayKey(date) {

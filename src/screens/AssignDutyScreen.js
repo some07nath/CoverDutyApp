@@ -13,16 +13,17 @@ import {
   findFreeTeachers,
   findTeachersWithSameClass,
 } from '../utils/coverDuty';
+import { getTeacherDisplayName, PERIOD_TIMES } from '../data/teachers';
 import { getDutyCounter } from '../utils/storage';
-import { PERIODS, PERIOD_TIMES } from '../data/teachers';
 
 export default function AssignDutyScreen({ route, navigation }) {
   const { date, absentTeachers, dayKey } = route.params;
   const parsedDate = new Date(date);
 
+  const [dutiesByTeacher, setDutiesByTeacher] = useState({});
   const [neededDuties, setNeededDuties] = useState([]);
   const [assignments, setAssignments] = useState({});
-  // assignments: { [dutyId]: { coverTeacher: string, combined: boolean } }
+  // assignments: { [dutyId]: { coverTeacher: string, combined: boolean, isCombined: boolean } }
   const [dutyCounters, setDutyCounters] = useState({});
   const [expandedDutyId, setExpandedDutyId] = useState(null);
 
@@ -33,12 +34,16 @@ export default function AssignDutyScreen({ route, navigation }) {
   const loadData = async () => {
     // Load historical duty counters
     const counters = await getDutyCounter();
-    setDutyCounters(counters);
+    setDutyCounters(counters || {});
 
     // Collect all classes needing cover across all absent teachers
     const allDuties = [];
+    const byTeacher = {};
+
     absentTeachers.forEach((teacherName) => {
       const classes = getAbsentTeacherClasses(teacherName, dayKey);
+      byTeacher[teacherName] = [];
+
       classes.forEach((cls) => {
         const dutyId = `${cls.period}_${teacherName}_${cls.classInfo ? cls.classInfo.label : 'Class'}`;
         const sameClassTeachers = findTeachersWithSameClass(
@@ -48,7 +53,7 @@ export default function AssignDutyScreen({ route, navigation }) {
           absentTeachers
         );
 
-        allDuties.push({
+        const dutyObj = {
           id: dutyId,
           period: cls.period,
           periodLabel: cls.periodLabel,
@@ -58,63 +63,84 @@ export default function AssignDutyScreen({ route, navigation }) {
           classLabel: cls.classInfo ? cls.classInfo.label : cls.rawEntry,
           rawEntry: cls.rawEntry,
           sameClassTeachers,
-        });
+        };
+
+        allDuties.push(dutyObj);
+        byTeacher[teacherName].push(dutyObj);
       });
     });
 
-    // Sort duties by period
+    // Sort duties by period inside each teacher
+    Object.keys(byTeacher).forEach((teacherName) => {
+      byTeacher[teacherName].sort((a, b) => a.period - b.period);
+    });
+
     allDuties.sort((a, b) => a.period - b.period);
     setNeededDuties(allDuties);
+    setDutiesByTeacher(byTeacher);
 
-    // Initial default auto-assignment
+    // Initial Smart Auto-Assignment
+    // Rule 1: If a class can be combined, NO free teacher is used. The teacher taking that class handles it.
+    // Rule 4: If not combined, assign best eligible free teacher.
     const initialAssignments = {};
-    const assignedInPeriod = {}; // { period: Set of teacherNames }
+    const assignedInPeriod = {}; // { period: Set of free teacherNames }
 
     allDuties.forEach((duty) => {
       if (!assignedInPeriod[duty.period]) {
         assignedInPeriod[duty.period] = new Set();
       }
 
-      const freeCandidates = findFreeTeachers(
-        dayKey,
-        duty.period,
-        duty.classInfo,
-        absentTeachers
-      );
-
-      // Filter out someone already assigned in this period
-      const available = freeCandidates.filter(
-        (c) => !assignedInPeriod[duty.period].has(c.name)
-      );
-
-      // Best candidate: eligible cover first, highest day class count, lowest past duty counter
-      available.sort((a, b) => {
-        if (a.canCover && !b.canCover) return -1;
-        if (!a.canCover && b.canCover) return 1;
-        // Prioritize higher classes today (Rule 4d: prefer 6 over 5)
-        if (b.dayClassCount !== a.dayClassCount) {
-          return b.dayClassCount - a.dayClassCount;
-        }
-        // Balance total past duty count
-        const countA = counters[a.name] || 0;
-        const countB = counters[b.name] || 0;
-        return countA - countB;
-      });
-
-      const bestCandidate = available[0];
       const hasSameClassOpportunity = duty.sameClassTeachers && duty.sameClassTeachers.length > 0;
 
-      if (bestCandidate) {
+      if (hasSameClassOpportunity) {
+        // Option 1: Auto-combine with the first teacher who already teaches this class
+        const combineTeacher = duty.sameClassTeachers[0].teacherName;
         initialAssignments[duty.id] = {
-          coverTeacher: bestCandidate.name,
-          combined: hasSameClassOpportunity,
+          coverTeacher: combineTeacher,
+          combined: true,
+          isCombined: true,
         };
-        assignedInPeriod[duty.period].add(bestCandidate.name);
+        // NOTE: No free teacher is added to assignedInPeriod because this teacher already has this class!
       } else {
-        initialAssignments[duty.id] = {
-          coverTeacher: '',
-          combined: hasSameClassOpportunity,
-        };
+        // Option 2: Need an outside free teacher
+        const freeCandidates = findFreeTeachers(
+          dayKey,
+          duty.period,
+          duty.classInfo,
+          absentTeachers
+        );
+
+        const available = freeCandidates.filter(
+          (c) => !assignedInPeriod[duty.period].has(c.name)
+        );
+
+        // Sort by rule: eligible first, higher day class count (Rule 4d), lower past duty count (Rule 5)
+        available.sort((a, b) => {
+          if (a.canCover && !b.canCover) return -1;
+          if (!a.canCover && b.canCover) return 1;
+          if (b.dayClassCount !== a.dayClassCount) {
+            return b.dayClassCount - a.dayClassCount;
+          }
+          const countA = counters[a.name] || 0;
+          const countB = counters[b.name] || 0;
+          return countA - countB;
+        });
+
+        const bestCandidate = available[0];
+        if (bestCandidate) {
+          initialAssignments[duty.id] = {
+            coverTeacher: bestCandidate.name,
+            combined: false,
+            isCombined: false,
+          };
+          assignedInPeriod[duty.period].add(bestCandidate.name);
+        } else {
+          initialAssignments[duty.id] = {
+            coverTeacher: '',
+            combined: false,
+            isCombined: false,
+          };
+        }
       }
     });
 
@@ -124,28 +150,43 @@ export default function AssignDutyScreen({ route, navigation }) {
     }
   };
 
-  const handleSelectCoverTeacher = (dutyId, period, teacherName) => {
+  // User chooses a teacher to take the combined class (No free teacher needed)
+  const handleSelectCombinedTeacher = (dutyId, combineTeacherName) => {
     setAssignments((prev) => ({
       ...prev,
       [dutyId]: {
-        ...(prev[dutyId] || {}),
-        coverTeacher: teacherName,
+        coverTeacher: combineTeacherName,
+        combined: true,
+        isCombined: true,
       },
     }));
   };
 
-  const handleToggleCombined = (dutyId) => {
+  // User chooses to assign an outside free teacher instead of combining
+  const handleSwitchToFreeTeacher = (dutyId, bestFreeCandidateName = '') => {
     setAssignments((prev) => ({
       ...prev,
       [dutyId]: {
-        ...(prev[dutyId] || {}),
-        combined: !prev[dutyId]?.combined,
+        coverTeacher: bestFreeCandidateName,
+        combined: false,
+        isCombined: false,
+      },
+    }));
+  };
+
+  // User picks a specific free teacher
+  const handleSelectFreeTeacher = (dutyId, teacherName) => {
+    setAssignments((prev) => ({
+      ...prev,
+      [dutyId]: {
+        coverTeacher: teacherName,
+        combined: false,
+        isCombined: false,
       },
     }));
   };
 
   const handleFinish = () => {
-    // Check unassigned duties
     const unassigned = neededDuties.filter(
       (d) => !assignments[d.id] || !assignments[d.id].coverTeacher
     );
@@ -153,7 +194,7 @@ export default function AssignDutyScreen({ route, navigation }) {
     if (unassigned.length > 0) {
       Alert.alert(
         'Incomplete Assignments',
-        `There are ${unassigned.length} period(s) without a cover teacher assigned. Do you want to proceed anyway?`,
+        `There are ${unassigned.length} period(s) without a teacher assigned. Do you want to proceed anyway?`,
         [
           { text: 'Review', style: 'cancel' },
           { text: 'Proceed', onPress: () => navigateToOutput() },
@@ -165,35 +206,35 @@ export default function AssignDutyScreen({ route, navigation }) {
   };
 
   const navigateToOutput = () => {
-    // Group assignments by cover teacher
-    // Output structure: { [coverTeacher]: [ { periodLabel, classLabel, absentTeacher, combined } ] }
-    const groupedAssignments = {};
+    // Group assignments by ABSENT TEACHER (Rule 2 correction)
+    // Structure: { [absentTeacher]: [ { period, periodLabel, classLabel, coverTeacher, combined } ] }
+    const groupedByAbsentTeacher = {};
 
     neededDuties.forEach((duty) => {
       const assignment = assignments[duty.id];
       if (assignment && assignment.coverTeacher) {
-        const teacher = assignment.coverTeacher;
-        if (!groupedAssignments[teacher]) {
-          groupedAssignments[teacher] = [];
+        const absent = duty.absentTeacher;
+        if (!groupedByAbsentTeacher[absent]) {
+          groupedByAbsentTeacher[absent] = [];
         }
-        groupedAssignments[teacher].push({
+        groupedByAbsentTeacher[absent].push({
           period: duty.period,
           periodLabel: duty.periodLabel,
           classLabel: duty.classLabel,
-          absentTeacher: duty.absentTeacher,
+          coverTeacher: assignment.coverTeacher,
           combined: assignment.combined || false,
         });
       }
     });
 
-    // Sort duties inside each teacher by period
-    Object.keys(groupedAssignments).forEach((teacher) => {
-      groupedAssignments[teacher].sort((a, b) => a.period - b.period);
+    // Sort duties inside each absent teacher by period ascending
+    Object.keys(groupedByAbsentTeacher).forEach((absent) => {
+      groupedByAbsentTeacher[absent].sort((a, b) => a.period - b.period);
     });
 
     navigation.navigate('Output', {
       date: parsedDate.toISOString(),
-      groupedAssignments,
+      groupedByAbsentTeacher,
       rawAssignments: assignments,
       neededDuties,
     });
@@ -207,7 +248,7 @@ export default function AssignDutyScreen({ route, navigation }) {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Assign Cover Duties</Text>
         <Text style={styles.headerSubtitle}>
-          {absentTeachers.length} Absent: {absentTeachers.join(', ')}
+          {absentTeachers.length} Absent: {absentTeachers.map(getTeacherDisplayName).join(', ')}
         </Text>
       </View>
 
@@ -217,133 +258,205 @@ export default function AssignDutyScreen({ route, navigation }) {
             <Text style={styles.emptyText}>No classes to cover today for selected absent teachers! 🎉</Text>
           </View>
         ) : (
-          neededDuties.map((duty, index) => {
-            const assignment = assignments[duty.id] || {};
-            const isExpanded = expandedDutyId === duty.id;
-            const freeCandidates = findFreeTeachers(
-              dayKey,
-              duty.period,
-              duty.classInfo,
-              absentTeachers
-            );
+          Object.entries(dutiesByTeacher).map(([absentTeacherName, duties]) => {
+            if (duties.length === 0) return null;
+            const absentShortName = getTeacherDisplayName(absentTeacherName);
 
             return (
-              <View key={duty.id} style={styles.dutyCard}>
-                {/* Duty Card Header */}
-                <TouchableOpacity
-                  style={styles.cardHeader}
-                  onPress={() => setExpandedDutyId(isExpanded ? null : duty.id)}
-                >
-                  <View style={styles.cardHeaderLeft}>
-                    <View style={styles.periodBadge}>
-                      <Text style={styles.periodBadgeText}>{duty.periodLabel}</Text>
-                    </View>
-                    <View>
-                      <Text style={styles.dutyClassTitle}>
-                        {duty.classLabel} ({duty.rawEntry})
-                      </Text>
-                      <Text style={styles.dutySubtitle}>
-                        Absent: <Text style={styles.bold}>{duty.absentTeacher}</Text> • {duty.periodTime}
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={styles.cardHeaderRight}>
-                    <Text style={styles.assignedBadgeText}>
-                      {assignment.coverTeacher ? assignment.coverTeacher : '⚠️ Select'}
-                    </Text>
-                    <Text style={styles.expandIcon}>{isExpanded ? '▲' : '▼'}</Text>
-                  </View>
-                </TouchableOpacity>
+              <View key={absentTeacherName} style={styles.absentTeacherSection}>
+                <View style={styles.absentTeacherHeader}>
+                  <Text style={styles.absentTeacherTitle}>
+                    🔴 Absent: {absentShortName} ({duties.length} classes)
+                  </Text>
+                </View>
 
-                {/* Duty Card Body */}
-                {isExpanded && (
-                  <View style={styles.cardBody}>
-                    {/* Combine Sections Opportunity (Rule 4e) */}
-                    {duty.sameClassTeachers && duty.sameClassTeachers.length > 0 && (
-                      <View style={styles.combineNoticeBox}>
-                        <Text style={styles.combineNoticeTitle}>
-                          💡 Combine Sections Opportunity (Rule 4e):
-                        </Text>
-                        {duty.sameClassTeachers.map((s, idx) => (
-                          <Text key={idx} style={styles.combineNoticeTeacher}>
-                            • {s.teacherName} also has {duty.classLabel} ({s.rawEntry}) this period
-                          </Text>
-                        ))}
-                        <TouchableOpacity
-                          style={[
-                            styles.combineToggleBtn,
-                            assignment.combined && styles.combineToggleBtnActive,
-                          ]}
-                          onPress={() => handleToggleCombined(duty.id)}
-                        >
-                          <Text
-                            style={[
-                              styles.combineToggleText,
-                              assignment.combined && styles.combineToggleTextActive,
-                            ]}
-                          >
-                            {assignment.combined ? '✅ Sections Combined' : '➕ Mark as Combined Section'}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
+                {duties.map((duty) => {
+                  const assignment = assignments[duty.id] || {};
+                  const isExpanded = expandedDutyId === duty.id;
+                  const isCombined = assignment.isCombined === true;
+                  const freeCandidates = findFreeTeachers(
+                    dayKey,
+                    duty.period,
+                    duty.classInfo,
+                    absentTeachers
+                  );
+                  const hasSameClassOption = duty.sameClassTeachers && duty.sameClassTeachers.length > 0;
+                  const coverTeacherDisplay = assignment.coverTeacher
+                    ? getTeacherDisplayName(assignment.coverTeacher)
+                    : null;
 
-                    {/* Candidate Free Teachers (Rule 4a, 4b, 4c, 4d) */}
-                    <Text style={styles.candidateHeader}>
-                      Choose Free Teacher (Free in {duty.periodLabel}):
-                    </Text>
+                  return (
+                    <View key={duty.id} style={styles.dutyCard}>
+                      {/* Card Header */}
+                      <TouchableOpacity
+                        style={styles.cardHeader}
+                        onPress={() => setExpandedDutyId(isExpanded ? null : duty.id)}
+                      >
+                        <View style={styles.cardHeaderLeft}>
+                          <View style={styles.periodBadge}>
+                            <Text style={styles.periodBadgeText}>{duty.periodLabel}</Text>
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.dutyClassTitle}>
+                              {duty.classLabel} ({duty.rawEntry})
+                            </Text>
+                            <Text style={styles.dutySubtitle}>{duty.periodTime}</Text>
+                          </View>
+                        </View>
 
-                    {freeCandidates.length === 0 ? (
-                      <Text style={styles.noCandidatesText}>
-                        No eligible teachers are free in this period.
-                      </Text>
-                    ) : (
-                      <View style={styles.candidateList}>
-                        {freeCandidates.map((candidate) => {
-                          const isSelected = assignment.coverTeacher === candidate.name;
-                          const pastDutyCount = dutyCounters[candidate.name] || 0;
+                        <View style={styles.cardHeaderRight}>
+                          {isCombined ? (
+                            <View style={styles.combinedBadge}>
+                              <Text style={styles.combinedBadgeText}>
+                                🔀 {coverTeacherDisplay} (combined)
+                              </Text>
+                            </View>
+                          ) : coverTeacherDisplay ? (
+                            <View style={styles.assignedBadge}>
+                              <Text style={styles.assignedBadgeText}>
+                                👤 {coverTeacherDisplay}
+                              </Text>
+                            </View>
+                          ) : (
+                            <Text style={styles.unassignedText}>⚠️ Select</Text>
+                          )}
+                          <Text style={styles.expandIcon}>{isExpanded ? '▲' : '▼'}</Text>
+                        </View>
+                      </TouchableOpacity>
 
-                          return (
-                            <TouchableOpacity
-                              key={candidate.name}
-                              style={[
-                                styles.candidateItem,
-                                isSelected && styles.candidateItemSelected,
-                                !candidate.canCover && styles.candidateItemIneligible,
-                              ]}
-                              onPress={() =>
-                                handleSelectCoverTeacher(duty.id, duty.period, candidate.name)
-                              }
-                            >
-                              <View style={styles.candidateRadio}>
-                                <Text style={styles.candidateRadioText}>
-                                  {isSelected ? '●' : '○'}
+                      {/* Card Body */}
+                      {isExpanded && (
+                        <View style={styles.cardBody}>
+                          {/* 1. Combined Class Options (Rule 1 & 4e) */}
+                          {hasSameClassOption && (
+                            <View style={styles.combineBox}>
+                              <Text style={styles.combineBoxTitle}>
+                                🔀 Combine Section Option (No Free Teacher Needed):
+                              </Text>
+                              <Text style={styles.combineBoxSub}>
+                                Other present teachers already taking {duty.classLabel} this period:
+                              </Text>
+
+                              {duty.sameClassTeachers.map((st) => {
+                                const isSelected =
+                                  isCombined && assignment.coverTeacher === st.teacherName;
+                                const teacherShort = getTeacherDisplayName(st.teacherName);
+
+                                return (
+                                  <TouchableOpacity
+                                    key={st.teacherName}
+                                    style={[
+                                      styles.combineOption,
+                                      isSelected && styles.combineOptionSelected,
+                                    ]}
+                                    onPress={() =>
+                                      handleSelectCombinedTeacher(duty.id, st.teacherName)
+                                    }
+                                  >
+                                    <View style={styles.radioCircle}>
+                                      <Text style={styles.radioText}>{isSelected ? '●' : '○'}</Text>
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                      <Text style={styles.combineTeacherName}>
+                                        {teacherShort} ({st.rawEntry})
+                                      </Text>
+                                      <Text style={styles.combineTeacherMeta}>
+                                        Combines both sections into one • No outside cover teacher needed
+                                      </Text>
+                                    </View>
+                                    {isSelected && (
+                                      <View style={styles.activeTag}>
+                                        <Text style={styles.activeTagText}>Combined</Text>
+                                      </View>
+                                    )}
+                                  </TouchableOpacity>
+                                );
+                              })}
+
+                              {/* Toggle between combined and outside free teacher */}
+                              {isCombined && (
+                                <TouchableOpacity
+                                  style={styles.switchToFreeBtn}
+                                  onPress={() => {
+                                    const firstFree = freeCandidates[0]?.name || '';
+                                    handleSwitchToFreeTeacher(duty.id, firstFree);
+                                  }}
+                                >
+                                  <Text style={styles.switchToFreeText}>
+                                    🔄 Or choose an outside free teacher instead
+                                  </Text>
+                                </TouchableOpacity>
+                              )}
+                            </View>
+                          )}
+
+                          {/* 2. Free Teachers Selection */}
+                          {(!hasSameClassOption || !isCombined) && (
+                            <View style={styles.freeTeachersBox}>
+                              <Text style={styles.freeSectionTitle}>
+                                👤 Choose Free Teacher for Duty ({duty.periodLabel} Period):
+                              </Text>
+
+                              {freeCandidates.length === 0 ? (
+                                <Text style={styles.noCandidatesText}>
+                                  No eligible teachers are free in this period.
                                 </Text>
-                              </View>
-                              <View style={styles.candidateInfo}>
-                                <View style={styles.candidateNameRow}>
-                                  <Text style={styles.candidateName}>{candidate.name}</Text>
-                                  {candidate.canCover ? (
-                                    <View style={styles.eligibleTag}>
-                                      <Text style={styles.eligibleTagText}>Eligible</Text>
-                                    </View>
-                                  ) : (
-                                    <View style={styles.otherTag}>
-                                      <Text style={styles.otherTagText}>Different Range</Text>
-                                    </View>
-                                  )}
+                              ) : (
+                                <View style={styles.candidateList}>
+                                  {freeCandidates.map((candidate) => {
+                                    const isSelected =
+                                      !isCombined && assignment.coverTeacher === candidate.name;
+                                    const pastDutyCount = dutyCounters[candidate.name] || 0;
+                                    const candidateDisplay = getTeacherDisplayName(candidate.name);
+
+                                    return (
+                                      <TouchableOpacity
+                                        key={candidate.name}
+                                        style={[
+                                          styles.candidateItem,
+                                          isSelected && styles.candidateItemSelected,
+                                          !candidate.canCover && styles.candidateItemIneligible,
+                                        ]}
+                                        onPress={() =>
+                                          handleSelectFreeTeacher(duty.id, candidate.name)
+                                        }
+                                      >
+                                        <View style={styles.radioCircle}>
+                                          <Text style={styles.radioText}>
+                                            {isSelected ? '●' : '○'}
+                                          </Text>
+                                        </View>
+                                        <View style={styles.candidateInfo}>
+                                          <View style={styles.candidateNameRow}>
+                                            <Text style={styles.candidateName}>
+                                              {candidateDisplay}
+                                            </Text>
+                                            {candidate.canCover ? (
+                                              <View style={styles.eligibleTag}>
+                                                <Text style={styles.eligibleTagText}>Eligible</Text>
+                                              </View>
+                                            ) : (
+                                              <View style={styles.otherTag}>
+                                                <Text style={styles.otherTagText}>Other Range</Text>
+                                              </View>
+                                            )}
+                                          </View>
+                                          <Text style={styles.candidateMeta}>
+                                            📅 {candidate.dayClassCount} classes today (Rule 4d) • 📋 {pastDutyCount} past covers (Rule 5)
+                                          </Text>
+                                        </View>
+                                      </TouchableOpacity>
+                                    );
+                                  })}
                                 </View>
-                                <Text style={styles.candidateMeta}>
-                                  📅 {candidate.dayClassCount} classes today (Rule 4d) • 📋 {pastDutyCount} past covers (Rule 5)
-                                </Text>
-                              </View>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </View>
-                    )}
-                  </View>
-                )}
+                              )}
+                            </View>
+                          )}
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
               </View>
             );
           })
@@ -401,10 +514,27 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
   },
+  absentTeacherSection: {
+    marginBottom: 16,
+  },
+  absentTeacherHeader: {
+    backgroundColor: '#fce4ec',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#c2185b',
+  },
+  absentTeacherTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#880e4f',
+  },
   dutyCard: {
     backgroundColor: '#fff',
     borderRadius: 10,
-    marginBottom: 12,
+    marginBottom: 10,
     elevation: 2,
     shadowColor: '#000',
     shadowOpacity: 0.05,
@@ -416,7 +546,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 14,
+    padding: 12,
     backgroundColor: '#fff',
   },
   cardHeaderLeft: {
@@ -429,7 +559,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingVertical: 6,
     paddingHorizontal: 10,
-    marginRight: 12,
+    marginRight: 10,
   },
   periodBadgeText: {
     color: '#1a73e8',
@@ -437,7 +567,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   dutyClassTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: 'bold',
     color: '#202124',
   },
@@ -446,17 +576,38 @@ const styles = StyleSheet.create({
     color: '#5f6368',
     marginTop: 2,
   },
-  bold: {
-    fontWeight: 'bold',
-    color: '#d93025',
-  },
   cardHeaderRight: {
     alignItems: 'flex-end',
+    marginLeft: 8,
+  },
+  combinedBadge: {
+    backgroundColor: '#e6f4ea',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#34a853',
+  },
+  combinedBadgeText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#137333',
+  },
+  assignedBadge: {
+    backgroundColor: '#e8f0fe',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
   },
   assignedBadgeText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#188038',
+    color: '#1a73e8',
+  },
+  unassignedText: {
+    fontSize: 12,
+    color: '#d93025',
+    fontWeight: 'bold',
   },
   expandIcon: {
     fontSize: 12,
@@ -464,61 +615,83 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   cardBody: {
-    padding: 14,
+    padding: 12,
     borderTopWidth: 1,
     borderTopColor: '#f1f3f4',
     backgroundColor: '#fafbfc',
   },
-  combineNoticeBox: {
-    backgroundColor: '#e6f4ea',
+  combineBox: {
+    backgroundColor: '#f1f8e9',
     borderRadius: 8,
     padding: 12,
-    marginBottom: 14,
-    borderLeftWidth: 4,
-    borderLeftColor: '#137333',
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#c5e1a5',
   },
-  combineNoticeTitle: {
+  combineBoxTitle: {
     fontSize: 13,
     fontWeight: 'bold',
-    color: '#137333',
+    color: '#33691e',
     marginBottom: 4,
   },
-  combineNoticeTeacher: {
+  combineBoxSub: {
     fontSize: 12,
-    color: '#202124',
-    marginBottom: 2,
+    color: '#558b2f',
+    marginBottom: 8,
   },
-  combineToggleBtn: {
-    marginTop: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+  combineOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#fff',
+    padding: 10,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#137333',
-    borderRadius: 6,
-    alignSelf: 'flex-start',
+    borderColor: '#c5e1a5',
+    marginBottom: 6,
   },
-  combineToggleBtnActive: {
-    backgroundColor: '#137333',
+  combineOptionSelected: {
+    borderColor: '#33691e',
+    backgroundColor: '#e8f5e9',
   },
-  combineToggleText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#137333',
+  combineTeacherName: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#202124',
   },
-  combineToggleTextActive: {
+  combineTeacherMeta: {
+    fontSize: 11,
+    color: '#558b2f',
+    marginTop: 2,
+  },
+  activeTag: {
+    backgroundColor: '#33691e',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  activeTagText: {
     color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
-  candidateHeader: {
+  switchToFreeBtn: {
+    marginTop: 6,
+    paddingVertical: 6,
+    alignItems: 'center',
+  },
+  switchToFreeText: {
+    fontSize: 12,
+    color: '#1a73e8',
+    fontWeight: '600',
+  },
+  freeTeachersBox: {
+    marginTop: 4,
+  },
+  freeSectionTitle: {
     fontSize: 13,
     fontWeight: 'bold',
     color: '#5f6368',
     marginBottom: 8,
-  },
-  noCandidatesText: {
-    fontSize: 13,
-    color: '#d93025',
-    fontStyle: 'italic',
   },
   candidateList: {
     gap: 6,
@@ -537,12 +710,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#e8f0fe',
   },
   candidateItemIneligible: {
-    opacity: 0.7,
+    opacity: 0.6,
   },
-  candidateRadio: {
+  radioCircle: {
     marginRight: 10,
   },
-  candidateRadioText: {
+  radioText: {
     fontSize: 18,
     color: '#1a73e8',
   },
@@ -555,7 +728,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   candidateName: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
     color: '#202124',
   },
@@ -581,9 +754,14 @@ const styles = StyleSheet.create({
     color: '#c26401',
   },
   candidateMeta: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#5f6368',
     marginTop: 2,
+  },
+  noCandidatesText: {
+    fontSize: 13,
+    color: '#d93025',
+    fontStyle: 'italic',
   },
   footer: {
     padding: 14,
