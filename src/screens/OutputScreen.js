@@ -14,14 +14,14 @@ import { formatCoverOutput } from '../utils/coverDuty';
 import { incrementDutyCounter } from '../utils/storage';
 
 export default function OutputScreen({ route, navigation }) {
-  const { date, groupedByAbsentTeacher } = route.params;
+  const { date, groupedByAbsentTeacher, teachers } = route.params;
   const parsedDate = new Date(date);
 
   const [savedCounters, setSavedCounters] = useState(false);
   const [copied, setCopied] = useState(false);
 
   // Generate formatted routine string
-  const outputText = formatCoverOutput(parsedDate, groupedByAbsentTeacher);
+  const outputText = formatCoverOutput(parsedDate, groupedByAbsentTeacher, teachers);
 
   const handleCopy = async () => {
     await Clipboard.setStringAsync(outputText);
@@ -131,7 +131,7 @@ export default function OutputScreen({ route, navigation }) {
         <View style={styles.navRow}>
           <TouchableOpacity
             style={styles.navBtn}
-            onPress={() => navigation.navigate('Counter')}
+            onPress={() => navigation.navigate('Counter', { teachers })}
           >
             <Text style={styles.navBtnText}>View Duty Counters 📊</Text>
           </TouchableOpacity>

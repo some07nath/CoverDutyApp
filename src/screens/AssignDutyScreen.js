@@ -15,11 +15,13 @@ import {
 } from '../utils/coverDuty';
 import { getTeacherDisplayName, PERIOD_TIMES } from '../data/teachers';
 import { getDutyCounter } from '../utils/storage';
+import { getStoredTeachers } from '../utils/sync';
 
 export default function AssignDutyScreen({ route, navigation }) {
-  const { date, absentTeachers, dayKey } = route.params;
+  const { date, absentTeachers, dayKey, teachers: routeTeachers } = route.params;
   const parsedDate = new Date(date);
 
+  const [activeTeachers, setActiveTeachers] = useState(routeTeachers || []);
   const [dutiesByTeacher, setDutiesByTeacher] = useState({});
   const [neededDuties, setNeededDuties] = useState([]);
   const [assignments, setAssignments] = useState({});
@@ -32,6 +34,13 @@ export default function AssignDutyScreen({ route, navigation }) {
   }, []);
 
   const loadData = async () => {
+    // Load active teachers list (prefer passed list, else load from storage)
+    const currentTeachers =
+      routeTeachers && routeTeachers.length > 0
+        ? routeTeachers
+        : await getStoredTeachers();
+    setActiveTeachers(currentTeachers);
+
     // Load historical duty counters
     const counters = await getDutyCounter();
     setDutyCounters(counters || {});
@@ -41,7 +50,7 @@ export default function AssignDutyScreen({ route, navigation }) {
     const byTeacher = {};
 
     absentTeachers.forEach((teacherName) => {
-      const classes = getAbsentTeacherClasses(teacherName, dayKey);
+      const classes = getAbsentTeacherClasses(teacherName, dayKey, currentTeachers);
       byTeacher[teacherName] = [];
 
       classes.forEach((cls) => {
@@ -50,7 +59,8 @@ export default function AssignDutyScreen({ route, navigation }) {
           dayKey,
           cls.period,
           cls.classInfo,
-          absentTeachers
+          absentTeachers,
+          currentTeachers
         );
 
         const dutyObj = {
@@ -107,7 +117,9 @@ export default function AssignDutyScreen({ route, navigation }) {
           dayKey,
           duty.period,
           duty.classInfo,
-          absentTeachers
+          absentTeachers,
+          null,
+          currentTeachers
         );
 
         const available = freeCandidates.filter(
@@ -237,6 +249,7 @@ export default function AssignDutyScreen({ route, navigation }) {
       groupedByAbsentTeacher,
       rawAssignments: assignments,
       neededDuties,
+      teachers: activeTeachers,
     });
   };
 
@@ -248,7 +261,7 @@ export default function AssignDutyScreen({ route, navigation }) {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Assign Cover Duties</Text>
         <Text style={styles.headerSubtitle}>
-          {absentTeachers.length} Absent: {absentTeachers.map(getTeacherDisplayName).join(', ')}
+          {absentTeachers.length} Absent: {absentTeachers.map((n) => getTeacherDisplayName(n, activeTeachers)).join(', ')}
         </Text>
       </View>
 
@@ -260,7 +273,7 @@ export default function AssignDutyScreen({ route, navigation }) {
         ) : (
           Object.entries(dutiesByTeacher).map(([absentTeacherName, duties]) => {
             if (duties.length === 0) return null;
-            const absentShortName = getTeacherDisplayName(absentTeacherName);
+            const absentShortName = getTeacherDisplayName(absentTeacherName, activeTeachers);
 
             return (
               <View key={absentTeacherName} style={styles.absentTeacherSection}>
@@ -278,11 +291,13 @@ export default function AssignDutyScreen({ route, navigation }) {
                     dayKey,
                     duty.period,
                     duty.classInfo,
-                    absentTeachers
+                    absentTeachers,
+                    null,
+                    activeTeachers
                   );
                   const hasSameClassOption = duty.sameClassTeachers && duty.sameClassTeachers.length > 0;
                   const coverTeacherDisplay = assignment.coverTeacher
-                    ? getTeacherDisplayName(assignment.coverTeacher)
+                    ? getTeacherDisplayName(assignment.coverTeacher, activeTeachers)
                     : null;
 
                   return (
@@ -340,7 +355,7 @@ export default function AssignDutyScreen({ route, navigation }) {
                               {duty.sameClassTeachers.map((st) => {
                                 const isSelected =
                                   isCombined && assignment.coverTeacher === st.teacherName;
-                                const teacherShort = getTeacherDisplayName(st.teacherName);
+                                const teacherShort = getTeacherDisplayName(st.teacherName, activeTeachers);
 
                                 return (
                                   <TouchableOpacity
@@ -407,7 +422,7 @@ export default function AssignDutyScreen({ route, navigation }) {
                                     const isSelected =
                                       !isCombined && assignment.coverTeacher === candidate.name;
                                     const pastDutyCount = dutyCounters[candidate.name] || 0;
-                                    const candidateDisplay = getTeacherDisplayName(candidate.name);
+                                    const candidateDisplay = getTeacherDisplayName(candidate.name, activeTeachers);
 
                                     return (
                                       <TouchableOpacity

@@ -5,8 +5,9 @@ import { TEACHERS, ELIGIBLE_TEACHERS, PERIODS, getTeacherDisplayName } from '../
  * Get the classes an absent teacher has on a specific day
  * Returns array of { period: 0-7, periodLabel: '1st'-'8th', classInfo: 'Class 10', rawEntry: '10 Physics' }
  */
-export function getAbsentTeacherClasses(teacherName, dayKey) {
-  const teacher = TEACHERS.find(
+export function getAbsentTeacherClasses(teacherName, dayKey, teachersList = null) {
+  const list = teachersList && teachersList.length > 0 ? teachersList : TEACHERS;
+  const teacher = list.find(
     (t) =>
       t.name.toLowerCase() === teacherName.toLowerCase() ||
       (t.shortName && t.shortName.toLowerCase() === teacherName.toLowerCase())
@@ -154,10 +155,14 @@ export function getTeacherDayClassCount(teacher, dayKey) {
  * Find free teachers for a specific period on a specific day
  * Returns array sorted by: eligible to cover > more classes today (Rule 4d) > alphabetical
  */
-export function findFreeTeachers(dayKey, periodIndex, classInfo, absentTeacherNames, presentTeacherNames) {
+export function findFreeTeachers(dayKey, periodIndex, classInfo, absentTeacherNames, presentTeacherNames, teachersList = null) {
   const freeTeachers = [];
+  const list = teachersList && teachersList.length > 0 ? teachersList : TEACHERS;
+  const eligibleList = list.filter(
+    (t) => !['principal', 'primary', 'excluded', 'nios'].includes(t.category)
+  );
 
-  for (const teacher of ELIGIBLE_TEACHERS) {
+  for (const teacher of eligibleList) {
     // Skip absent teachers
     if (absentTeacherNames.map((n) => n.toLowerCase()).includes(teacher.name.toLowerCase())) {
       continue;
@@ -208,12 +213,13 @@ export function findFreeTeachers(dayKey, periodIndex, classInfo, absentTeacherNa
  * Find if other present teachers are also teaching the same class at the same period
  * (Rule 4e: for combining sections of classes)
  */
-export function findTeachersWithSameClass(dayKey, periodIndex, classInfo, absentTeacherNames) {
+export function findTeachersWithSameClass(dayKey, periodIndex, classInfo, absentTeacherNames, teachersList = null) {
   if (!classInfo || classInfo.classNum === 0) return [];
 
   const teachersWithSameClass = [];
+  const list = teachersList && teachersList.length > 0 ? teachersList : TEACHERS;
 
-  for (const teacher of TEACHERS) {
+  for (const teacher of list) {
     // Skip absent teachers
     if (absentTeacherNames.map((n) => n.toLowerCase()).includes(teacher.name.toLowerCase())) {
       continue;
@@ -252,7 +258,7 @@ export function findTeachersWithSameClass(dayKey, periodIndex, classInfo, absent
  *
  * assignmentsByAbsentTeacher: { [absentTeacherName]: [{ periodLabel, classLabel, coverTeacher, combined }] }
  */
-export function formatCoverOutput(date, assignmentsByAbsentTeacher) {
+export function formatCoverOutput(date, assignmentsByAbsentTeacher, teachersList = null) {
   const day = String(date.getDate()).padStart(2, '0');
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const year = date.getFullYear();
@@ -260,10 +266,10 @@ export function formatCoverOutput(date, assignmentsByAbsentTeacher) {
 
   for (const [absentTeacher, duties] of Object.entries(assignmentsByAbsentTeacher)) {
     if (!duties || duties.length === 0) continue;
-    const absentDisplay = getTeacherDisplayName(absentTeacher);
+    const absentDisplay = getTeacherDisplayName(absentTeacher, teachersList);
     output += `\n${absentDisplay}\n`;
     for (const duty of duties) {
-      const coverDisplay = getTeacherDisplayName(duty.coverTeacher);
+      const coverDisplay = getTeacherDisplayName(duty.coverTeacher, teachersList);
       let line = `${duty.periodLabel} - ${duty.classLabel} - ${coverDisplay}`;
       if (duty.combined) {
         line += ' (combined)';

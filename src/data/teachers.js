@@ -479,9 +479,10 @@ export const ELIGIBLE_TEACHERS = TEACHERS.filter(
 );
 
 // Get short/display name for teacher
-export function getTeacherDisplayName(fullName) {
+export function getTeacherDisplayName(fullName, teachersList = null) {
   if (!fullName) return '';
-  const teacher = TEACHERS.find(
+  const list = teachersList && teachersList.length > 0 ? teachersList : TEACHERS;
+  const teacher = list.find(
     (t) =>
       t.name.toLowerCase() === fullName.toLowerCase() ||
       (t.shortName && t.shortName.toLowerCase() === fullName.toLowerCase())

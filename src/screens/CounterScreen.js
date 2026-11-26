@@ -8,23 +8,36 @@ import {
   Alert,
   Platform,
 } from 'react-native';
-import { ELIGIBLE_TEACHERS } from '../data/teachers';
+import { TEACHERS } from '../data/teachers';
 import {
   getDutyCounter,
   incrementDutyCounter,
   resetDutyCounter,
 } from '../utils/storage';
+import { getStoredTeachers } from '../utils/sync';
 
-export default function CounterScreen({ navigation }) {
+export default function CounterScreen({ route, navigation }) {
+  const routeTeachers = route?.params?.teachers;
   const [counters, setCounters] = useState({});
+  const [teachersList, setTeachersList] = useState(
+    routeTeachers && routeTeachers.length > 0 ? routeTeachers : TEACHERS
+  );
 
   useEffect(() => {
     loadCounters();
   }, []);
 
   const loadCounters = async () => {
-    const data = await getDutyCounter();
+    const [data, storedTeachers] = await Promise.all([
+      getDutyCounter(),
+      routeTeachers && routeTeachers.length > 0
+        ? Promise.resolve(routeTeachers)
+        : getStoredTeachers(),
+    ]);
     setCounters(data || {});
+    if (storedTeachers && storedTeachers.length > 0) {
+      setTeachersList(storedTeachers);
+    }
   };
 
   const handleAdjust = async (teacherName, delta) => {
@@ -54,7 +67,10 @@ export default function CounterScreen({ navigation }) {
   };
 
   // Sort teachers: teachers with duties first, then alphabetical
-  const sortedTeachers = [...ELIGIBLE_TEACHERS].sort((a, b) => {
+  const eligibleTeachers = teachersList.filter(
+    (t) => !['principal', 'primary', 'excluded', 'nios'].includes(t.category)
+  );
+  const sortedTeachers = [...eligibleTeachers].sort((a, b) => {
     const countA = counters[a.name] || 0;
     const countB = counters[b.name] || 0;
     if (countB !== countA) return countB - countA;
@@ -97,7 +113,7 @@ export default function CounterScreen({ navigation }) {
                   {teacher.shortName ? `${teacher.shortName} (${teacher.name})` : teacher.name}
                 </Text>
                 <Text style={styles.teacherSub}>
-                  {teacher.designation} • {teacher.subjects.join(', ')}
+                  {teacher.designation} • {(teacher.subjects || []).join(', ')}
                 </Text>
               </View>
 
